@@ -67,7 +67,7 @@
     /* ── Input Row ── */
     .input-row {
       display: grid;
-      grid-template-columns: 260px 1fr auto;
+      grid-template-columns: 1fr 1fr auto;
       gap: 16px; align-items: end;
     }
 
@@ -306,6 +306,17 @@
     .premium-input::-webkit-inner-spin-button { -webkit-appearance: none; }
     .premium-input:focus { outline: 2px solid #db5d00; outline-offset: -1px; border-radius: 2px; }
 
+    /* ── Phase listbox (expanded during search) ── */
+    #phaseSelect[size]:not([size="1"]) {
+      position: absolute; z-index: 100;
+      width: calc(100% - 50px);
+      border-color: #375957;
+      box-shadow: 0 4px 16px rgba(36,58,56,0.18);
+      border-radius: 7px;
+      background: white;
+      max-height: 220px; overflow-y: auto;
+    }
+
     /* ── Handing (select) cell ── */
     .col-handing { padding: 4px 10px !important; }
     .handing-select {
@@ -368,7 +379,8 @@
       <div class="input-row">
         <div class="field-group">
           <span class="field-label">Phase</span>
-          <div style="display:flex; gap:6px; align-items:center;">
+          <input type="text" id="phaseSearch" placeholder="Search phases…" autocomplete="off" style="margin-bottom:5px;">
+          <div style="display:flex; gap:6px; align-items:center; position:relative;">
             <select id="phaseSelect" style="flex:1; padding:8px 10px; border-radius:7px; border:1.5px solid #c0dae1; background:white; color:#1a2725; font-size:14px; height:42px; transition:border-color 0.15s;">
               <option value="">— configure Tableau connection above —</option>
             </select>

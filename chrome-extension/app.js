@@ -499,7 +499,7 @@ async function fetchPhaseList() {
 
     const dataRes = await fetch(
       `${TABLEAU_API}/sites/${siteId}/views/${viewId}/data`,
-      { headers: { 'X-Tableau-Auth': token, 'Accept': 'text/csv' } }
+      { headers: { 'X-Tableau-Auth': token } }
     );
     if (!dataRes.ok) throw new Error(`Failed to fetch view data (${dataRes.status})`);
     const csvText = await dataRes.text();
@@ -519,15 +519,28 @@ async function fetchPhaseList() {
   }
 }
 
-function populatePhaseDropdown(phases) {
-  const sel = document.getElementById('phaseSelect');
+let allPhases = [];
+
+function renderPhaseOptions(filter) {
+  const query = filter.toLowerCase();
+  const list  = query ? allPhases.filter(p => p.phase.toLowerCase().includes(query)) : allPhases;
+  const sel   = document.getElementById('phaseSelect');
+  const prev  = sel.value;
   sel.innerHTML = '<option value="">— select a phase —</option>';
-  phases.forEach(({ phase, phaseId }) => {
+  list.forEach(({ phase, phaseId }) => {
     const opt = document.createElement('option');
     opt.value = phaseId;
     opt.textContent = phase;
     sel.appendChild(opt);
   });
+  if (prev) sel.value = prev;
+}
+
+function populatePhaseDropdown(phases) {
+  allPhases = phases;
+  const searchEl = document.getElementById('phaseSearch');
+  if (searchEl) searchEl.value = '';
+  renderPhaseOptions('');
 }
 
 async function initTableau(forceRefresh = false) {
@@ -586,6 +599,36 @@ setupHandingToolbar();
     await initTableau(true);
   });
   document.getElementById('refreshPhasesBtn').addEventListener('click', () => initTableau(true));
+  const phaseSearch = document.getElementById('phaseSearch');
+  const phaseSelect = document.getElementById('phaseSelect');
+
+  function openPhaseList() {
+    const count = phaseSelect.options.length - 1;
+    phaseSelect.size = Math.max(count, 2);
+    phaseSelect.style.height = 'auto';
+  }
+  function closePhaseList() {
+    phaseSelect.size = 1;
+    phaseSelect.style.height = '42px';
+  }
+
+  phaseSearch.addEventListener('focus', openPhaseList);
+  phaseSearch.addEventListener('input', e => {
+    renderPhaseOptions(e.target.value);
+    openPhaseList();
+  });
+  // Arrow Down moves focus into the list
+  phaseSearch.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); phaseSelect.focus(); }
+  });
+  phaseSearch.addEventListener('blur', () => setTimeout(closePhaseList, 160));
+
+  phaseSelect.addEventListener('change', () => {
+    closePhaseList();
+    phaseSearch.value = '';
+    renderPhaseOptions('');
+  });
+  phaseSelect.addEventListener('blur', () => setTimeout(closePhaseList, 160));
 
   const saved = await chrome.storage.local.get(['patName', 'patSecret']);
   if (saved.patName) document.getElementById('patName').value = saved.patName;
@@ -691,7 +734,7 @@ document.getElementById('processBtn').addEventListener('click', async () => {
 
     document.getElementById('gisBadge').textContent    = `${features.length} records`;
     document.getElementById('spreadBadge').textContent = `${jsonData.length} rows`;
-    document.getElementById('gisMeta').textContent     = `Phase ${phaseId} · Lots ${gisLots[0]}–${gisLots[gisLots.length - 1]}`;
+    document.getElementById('gisMeta').textContent     = `${phaseName} · Lots ${gisLots[0]}–${gisLots[gisLots.length - 1]}`;
     document.getElementById('spreadMeta').textContent  = `${file.name} · Lots ${Math.min(...spreadLots)}–${Math.max(...spreadLots)}`;
 
     renderPreviewTable(features.slice(0, 10).map(f => f.attributes), 'gisTable');
@@ -718,7 +761,7 @@ document.getElementById('processBtn').addEventListener('click', async () => {
       const csv = XLSX.utils.sheet_to_csv(XLSX.utils.json_to_sheet(finalData));
       chrome.downloads.download({
         url:      'data:text/csv;charset=utf-8,' + encodeURIComponent(csv),
-        filename: `blended_Phase${phaseId}.csv`
+        filename: `blended_${phaseName || 'Phase' + phaseId}.csv`
       });
       setStatus('success', 'Download started!');
     };
