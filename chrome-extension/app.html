@@ -278,6 +278,24 @@
     .popover-save   { background: #db5d00; color: white; border: none; border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
     .popover-cancel { background: #f0f5f4; color: #375957; border: 1.5px solid #c0dae1; border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
 
+    /* ── Zoom hint ── */
+    .zoom-hint {
+      position: absolute; bottom: 52px; left: 50%; transform: translateX(-50%);
+      background: rgba(36,58,56,0.82); color: white; font-size: 12px; font-weight: 600;
+      padding: 6px 14px; border-radius: 20px; pointer-events: none;
+      white-space: nowrap; z-index: 50;
+    }
+
+    /* ── Plat name field ── */
+    .plat-name-field { display: flex; align-items: center; gap: 7px; }
+    .plat-name-label { font-size: 11px; font-weight: 700; color: #375957; white-space: nowrap; }
+    .plat-name-input {
+      border: 1.5px solid #c0dae1; border-radius: 6px; padding: 5px 10px;
+      font-size: 12px; color: #1a2725; width: 200px; transition: border-color 0.15s;
+    }
+    .plat-name-input:focus { outline: none; border-color: #375957; }
+    .plat-name-input::placeholder { color: #a8c4c0; }
+
     /* ── Map legend ── */
     .map-legend {
       padding: 8px 14px; display: flex; align-items: center; gap: 16px;
@@ -322,7 +340,8 @@
     }
     .edit-table tr:last-child td { border-bottom: none; }
 
-    .edit-table td.col-gis { color: #a8c4c0; background: #fafcfc; font-size: 11px; cursor: default; }
+    .edit-table td.col-gis     { color: #a8c4c0; background: #fafcfc; font-size: 11px; cursor: default; }
+    .edit-table td.col-platname { color: #375957; background: #f0f8f6; font-size: 12px; cursor: default; font-style: italic; }
     .edit-table td.col-sheet { color: #1a2725; cursor: text; transition: background 0.1s; }
     .edit-table td.col-sheet:hover { background: #faf8f5; }
     .edit-table td.col-sheet:focus {
@@ -355,16 +374,35 @@
     .premium-input::-webkit-inner-spin-button { -webkit-appearance: none; }
     .premium-input:focus { outline: 2px solid #db5d00; outline-offset: -1px; border-radius: 2px; }
 
-    /* ── Phase listbox (expanded during search) ── */
-    #phaseSelect[size]:not([size="1"]) {
-      position: absolute; z-index: 100;
-      width: calc(100% - 50px);
-      border-color: #375957;
-      box-shadow: 0 4px 16px rgba(36,58,56,0.18);
-      border-radius: 7px;
-      background: white;
-      max-height: 220px; overflow-y: auto;
+    /* ── Custom phase picker ── */
+    .phase-picker { flex: 1; position: relative; }
+    .phase-picker-trigger {
+      display: flex; align-items: center; justify-content: space-between;
+      border: 1.5px solid #c0dae1; border-radius: 7px; padding: 10px 12px;
+      background: white; cursor: pointer; font-size: 14px; color: #1a2725;
+      min-height: 42px; transition: border-color 0.15s; user-select: none;
     }
+    .phase-picker-trigger:hover, .phase-picker-trigger:focus { border-color: #375957; outline: none; }
+    .phase-picker-trigger.open { border-color: #375957; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+    .phase-picker-caret { font-size: 11px; color: #73b4ae; margin-left: 6px; transition: transform 0.15s; flex-shrink: 0; }
+    .phase-picker-trigger.open .phase-picker-caret { transform: rotate(180deg); }
+    .phase-picker-panel {
+      position: absolute; left: 0; right: 0; top: 100%; z-index: 100;
+      background: white; border: 1.5px solid #375957; border-top: none;
+      border-bottom-left-radius: 7px; border-bottom-right-radius: 7px;
+      box-shadow: 0 6px 20px rgba(36,58,56,0.16);
+    }
+    .phase-picker-search {
+      width: 100%; box-sizing: border-box; border: none;
+      border-bottom: 1.5px solid #edf3f2; border-radius: 0;
+      padding: 9px 12px; font-size: 13px; color: #1a2725; background: #fafcfc;
+    }
+    .phase-picker-search:focus { outline: none; background: white; }
+    .phase-picker-options { max-height: 240px; overflow-y: auto; }
+    .phase-option { padding: 9px 12px; font-size: 13px; color: #1a2725; cursor: pointer; transition: background 0.1s; }
+    .phase-option:hover, .phase-option.focused { background: #edf3f2; }
+    .phase-option.selected { font-weight: 600; color: #375957; }
+    .phase-option-empty { padding: 10px 12px; font-size: 13px; color: #a8c4c0; font-style: italic; }
 
     /* ── Handing (select) cell ── */
     .col-handing { padding: 4px 10px !important; }
@@ -428,12 +466,21 @@
       <div class="input-row">
         <div class="field-group">
           <span class="field-label">Phase</span>
-          <input type="text" id="phaseSearch" placeholder="Search phases…" autocomplete="off" style="margin-bottom:5px;">
-          <div style="display:flex; gap:6px; align-items:center; position:relative;">
-            <select id="phaseSelect" style="flex:1; padding:8px 10px; border-radius:7px; border:1.5px solid #c0dae1; background:white; color:#1a2725; font-size:14px; height:42px; transition:border-color 0.15s;">
+          <div style="display:flex; gap:6px; align-items:flex-start; position:relative;">
+            <div class="phase-picker" id="phasePicker">
+              <div class="phase-picker-trigger" id="phasePickerTrigger" tabindex="0">
+                <span id="phasePickerLabel">— configure Tableau connection above —</span>
+                <span class="phase-picker-caret">▾</span>
+              </div>
+              <div class="phase-picker-panel" id="phasePickerPanel" style="display:none;">
+                <input type="text" id="phaseSearch" class="phase-picker-search" placeholder="Search phases…" autocomplete="off">
+                <div class="phase-picker-options" id="phasePickerOptions"></div>
+              </div>
+            </div>
+            <button id="refreshPhasesBtn" class="btn btn-secondary" title="Reload phase list" style="padding:8px 12px; font-size:16px; height:42px; flex-shrink:0;">↻</button>
+            <select id="phaseSelect" style="display:none;">
               <option value="">— configure Tableau connection above —</option>
             </select>
-            <button id="refreshPhasesBtn" class="btn btn-secondary" title="Reload phase list" style="padding:8px 12px; font-size:16px; height:42px;">↻</button>
           </div>
         </div>
         <div class="field-group">
@@ -490,7 +537,7 @@
       </div>
 
       <!-- Geospatial Edit -->
-      <div class="section-label">Geospatial Edit — click a parcel to jump to its row &amp; edit inline</div>
+      <div class="section-label">Geospatial Edit — click a parcel to jump to edit</div>
 
       <div class="edit-layout">
 
@@ -504,12 +551,17 @@
           <div id="mapToolbar" class="map-toolbar"></div>
           <div id="map"></div>
           <div id="mapPopover" class="map-popover" style="display:none;"></div>
+          <div id="zoomHint" class="zoom-hint" style="display:none;">↕ Zoom in to see addresses</div>
           <div id="mapLegend" class="map-legend"></div>
         </div>
 
         <div class="edit-table-panel">
           <div class="edit-table-header">
             <span class="edit-table-header-title">Full Blended Dataset</span>
+            <div class="plat-name-field">
+              <label class="plat-name-label" for="platNameInput">Plat Name</label>
+              <input type="text" id="platNameInput" class="plat-name-input" placeholder="Enter plat name — fills all rows">
+            </div>
             <span class="edit-hint">Click a cell to edit · GIS columns are read-only</span>
           </div>
           <div class="edit-table-wrap" id="editTableWrap"></div>
