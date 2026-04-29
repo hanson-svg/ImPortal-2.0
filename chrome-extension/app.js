@@ -83,6 +83,7 @@ let svgActiveGroup  = null;
 let svgMatchedKeys  = new Set();
 let svgContentGroup = null;
 let svgTransform    = { x: 0, y: 0, s: 1 };
+const LABEL_ZOOM_THRESHOLD = 2.0; // address labels appear at 2× initial zoom
 
 // Handing assignment state
 let handingMap        = new Map();   // key → 'Left' | 'Right' | ''
@@ -91,11 +92,29 @@ let activeToolset     = 'handing';   // 'handing' | 'address' | 'classification'
 let classificationMap = new Map();   // key → classification string
 let currentFeatures   = [];          // stored for toolset re-render
 
+function updateZoomHint() {
+  const hint = document.getElementById('zoomHint');
+  if (!hint) return;
+  hint.style.display = (activeToolset === 'address' && svgTransform.s < LABEL_ZOOM_THRESHOLD) ? 'block' : 'none';
+}
+
 function applyMapTransform() {
-  if (svgContentGroup) {
-    const { x, y, s } = svgTransform;
-    svgContentGroup.setAttribute('transform', `translate(${x},${y}) scale(${s})`);
+  if (!svgContentGroup) return;
+  const { x, y, s } = svgTransform;
+  svgContentGroup.setAttribute('transform', `translate(${x},${y}) scale(${s})`);
+  if (svgEl && activeToolset === 'address') {
+    const show  = s >= LABEL_ZOOM_THRESHOLD;
+    // Counterscale so screen size stays constant (11px / 10px) regardless of zoom level
+    const size1 = (5.5 * LABEL_ZOOM_THRESHOLD / s).toFixed(2);
+    const size2 = (5.0 * LABEL_ZOOM_THRESHOLD / s).toFixed(2);
+    svgEl.querySelectorAll('text.address-label').forEach(txt => {
+      txt.setAttribute('opacity', show ? '1' : '0');
+      const spans = txt.querySelectorAll('tspan');
+      if (spans[0]) spans[0].setAttribute('font-size', size1);
+      if (spans[1]) spans[1].setAttribute('font-size', size2);
+    });
   }
+  updateZoomHint();
 }
 
 function styleFeatureGroup(fg, state) {
@@ -262,21 +281,45 @@ function renderSVGMap(features, blended) {
       const cy = ring0.reduce((s, p) => s + p[1], 0) / ring0.length;
       const [sx, sy] = project([cx, cy]);
 
-      const label = activeToolset === 'address'
-        ? [f.attributes.ST_NUM, f.attributes.ST_NAME].filter(Boolean).join(' ')
-        : activeToolset === 'classification' ? ''
-        : String(f.attributes.LotNum || '');
-      if (label) {
-        const txt = document.createElementNS(NS, 'text');
-        txt.setAttribute('x', sx); txt.setAttribute('y', sy);
-        txt.setAttribute('text-anchor', 'middle');
-        txt.setAttribute('dominant-baseline', 'middle');
-        txt.setAttribute('font-size', activeToolset === 'address' ? '6' : '8');
-        txt.setAttribute('font-family', '-apple-system, BlinkMacSystemFont, sans-serif');
-        txt.setAttribute('fill', '#1a2725');
-        txt.setAttribute('pointer-events', 'none');
-        txt.textContent = label;
-        fg.appendChild(txt);
+      if (activeToolset === 'address') {
+        const stNum  = String(f.attributes.ST_NUM  || '');
+        const stName = String(f.attributes.ST_NAME || '');
+        if (stNum || stName) {
+          const txt = document.createElementNS(NS, 'text');
+          txt.setAttribute('class', 'address-label');
+          txt.setAttribute('x', sx); txt.setAttribute('y', sy);
+          txt.setAttribute('text-anchor', 'middle');
+          txt.setAttribute('dominant-baseline', 'middle');
+          txt.setAttribute('font-family', '-apple-system, BlinkMacSystemFont, sans-serif');
+          txt.setAttribute('fill', '#dc2626');
+          txt.setAttribute('stroke', 'rgba(255,255,255,0.9)');
+          txt.setAttribute('stroke-width', '0.5');
+          txt.setAttribute('paint-order', 'stroke');
+          txt.setAttribute('pointer-events', 'none');
+          txt.setAttribute('opacity', svgTransform.s >= LABEL_ZOOM_THRESHOLD ? '1' : '0');
+          const initSize1 = (5.5 * LABEL_ZOOM_THRESHOLD / svgTransform.s).toFixed(2);
+          const initSize2 = (5.0 * LABEL_ZOOM_THRESHOLD / svgTransform.s).toFixed(2);
+          const span1 = document.createElementNS(NS, 'tspan');
+          span1.setAttribute('x', sx); span1.setAttribute('dy', '-3'); span1.setAttribute('font-size', initSize1);
+          span1.textContent = stNum;
+          const span2 = document.createElementNS(NS, 'tspan');
+          span2.setAttribute('x', sx); span2.setAttribute('dy', '7'); span2.setAttribute('font-size', initSize2);
+          span2.textContent = stName;
+          txt.appendChild(span1); txt.appendChild(span2);
+          fg.appendChild(txt);
+        }
+      } else {
+        const label = activeToolset === 'classification' ? '' : String(f.attributes.LotNum || '');
+        if (label) {
+          const txt = document.createElementNS(NS, 'text');
+          txt.setAttribute('x', sx); txt.setAttribute('y', sy);
+          txt.setAttribute('text-anchor', 'middle'); txt.setAttribute('dominant-baseline', 'middle');
+          txt.setAttribute('font-size', '8');
+          txt.setAttribute('font-family', '-apple-system, BlinkMacSystemFont, sans-serif');
+          txt.setAttribute('fill', '#1a2725'); txt.setAttribute('pointer-events', 'none');
+          txt.textContent = label;
+          fg.appendChild(txt);
+        }
       }
     }
 
@@ -422,6 +465,8 @@ function renderEditTable(blended) {
                     ).join('')}
                   </select>
                 </td>`;
+              } else if (k === 'PlatName') {
+                return `<td class="col-platname" data-col="PlatName" title="${row[k] ?? ''}">${row[k] ?? ''}</td>`;
               } else {
                 return `<td class="col-sheet" contenteditable="true"
                             data-col="${k}"
@@ -594,16 +639,50 @@ let allPhases = [];
 function renderPhaseOptions(filter) {
   const query = filter.toLowerCase();
   const list  = query ? allPhases.filter(p => p.phase.toLowerCase().includes(query)) : allPhases;
-  const sel   = document.getElementById('phaseSelect');
-  const prev  = sel.value;
-  sel.innerHTML = '<option value="">— select a phase —</option>';
+
+  // Sync hidden select (processBtn reads .value and .options[].text)
+  const sel  = document.getElementById('phaseSelect');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">—</option>';
   list.forEach(({ phase, phaseId }) => {
     const opt = document.createElement('option');
-    opt.value = phaseId;
-    opt.textContent = phase;
-    sel.appendChild(opt);
+    opt.value = phaseId; opt.textContent = phase; sel.appendChild(opt);
   });
   if (prev) sel.value = prev;
+
+  // Build visible list
+  const container = document.getElementById('phasePickerOptions');
+  if (!container) return;
+  if (!list.length) {
+    container.innerHTML = '<div class="phase-option-empty">No phases match</div>'; return;
+  }
+  container.innerHTML = '';
+  list.forEach(({ phase, phaseId }) => {
+    const div = document.createElement('div');
+    div.className = 'phase-option' + (sel.value === phaseId ? ' selected' : '');
+    div.textContent = phase; div.dataset.phaseId = phaseId;
+    div.addEventListener('mousedown', e => { e.preventDefault(); selectPhase(phaseId, phase); });
+    container.appendChild(div);
+  });
+}
+
+function selectPhase(phaseId, phaseName) {
+  document.getElementById('phaseSelect').value = phaseId;
+  document.getElementById('phasePickerLabel').textContent = phaseName || '— select a phase —';
+  closePickerPanel();
+  document.getElementById('phaseSearch').value = '';
+  renderPhaseOptions('');
+}
+
+function openPickerPanel() {
+  document.getElementById('phasePickerPanel').style.display = 'block';
+  document.getElementById('phasePickerTrigger').classList.add('open');
+  document.getElementById('phaseSearch').focus();
+}
+
+function closePickerPanel() {
+  document.getElementById('phasePickerPanel').style.display = 'none';
+  document.getElementById('phasePickerTrigger').classList.remove('open');
 }
 
 function populatePhaseDropdown(phases) {
@@ -814,6 +893,7 @@ function switchToolset(toolset) {
   renderToolbarContent(toolset);
   renderLegendContent(toolset);
   if (currentFeatures.length) renderSVGMap(currentFeatures, blendedData);
+  updateZoomHint();
 }
 
 // ── Handing toolbar ───────────────────────────────────────────────────────────
@@ -856,36 +936,24 @@ document.addEventListener('click', e => {
     await initTableau(true);
   });
   document.getElementById('refreshPhasesBtn').addEventListener('click', () => initTableau(true));
-  const phaseSearch = document.getElementById('phaseSearch');
-  const phaseSelect = document.getElementById('phaseSelect');
+  const phasePickerTrigger = document.getElementById('phasePickerTrigger');
+  const phaseSearchEl      = document.getElementById('phaseSearch');
 
-  function openPhaseList() {
-    const count = phaseSelect.options.length - 1;
-    phaseSelect.size = Math.max(count, 2);
-    phaseSelect.style.height = 'auto';
-  }
-  function closePhaseList() {
-    phaseSelect.size = 1;
-    phaseSelect.style.height = '42px';
-  }
-
-  phaseSearch.addEventListener('focus', openPhaseList);
-  phaseSearch.addEventListener('input', e => {
-    renderPhaseOptions(e.target.value);
-    openPhaseList();
+  phasePickerTrigger.addEventListener('click', () => {
+    document.getElementById('phasePickerPanel').style.display !== 'none'
+      ? closePickerPanel() : openPickerPanel();
   });
-  // Arrow Down moves focus into the list
-  phaseSearch.addEventListener('keydown', e => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); phaseSelect.focus(); }
+  phasePickerTrigger.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown')
+      { e.preventDefault(); openPickerPanel(); }
   });
-  phaseSearch.addEventListener('blur', () => setTimeout(closePhaseList, 160));
-
-  phaseSelect.addEventListener('change', () => {
-    closePhaseList();
-    phaseSearch.value = '';
-    renderPhaseOptions('');
+  phaseSearchEl.addEventListener('input', e => renderPhaseOptions(e.target.value));
+  phaseSearchEl.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closePickerPanel();
   });
-  phaseSelect.addEventListener('blur', () => setTimeout(closePhaseList, 160));
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#phasePicker')) closePickerPanel();
+  });
 
   const saved = await chrome.storage.local.get(['patName', 'patSecret']);
   if (saved.patName) document.getElementById('patName').value = saved.patName;
@@ -977,7 +1045,8 @@ document.getElementById('processBtn').addEventListener('click', async () => {
           'Street Name':   match.attributes.ST_NAME ?? '',
           Premium:         '',
           Handing:         '',
-          'Homesite Classification': row['Homesite Classification'] ?? ''
+          'Homesite Classification': row['Homesite Classification'] ?? '',
+          PlatName:        document.getElementById('platNameInput')?.value ?? ''
         });
       }
     });
@@ -1002,6 +1071,17 @@ document.getElementById('processBtn').addEventListener('click', async () => {
 
     // 5. SVG map + editable table
     initMapAndEditor(features, blended);
+
+    // PlatName — single input fills all rows
+    const platNameInput = document.getElementById('platNameInput');
+    platNameInput.oninput = () => {
+      const val = platNameInput.value;
+      blendedData.forEach(r => { r.PlatName = val; });
+      document.querySelectorAll('#editTableWrap td[data-col="PlatName"]').forEach(td => {
+        td.textContent = val;
+        td.title       = val;
+      });
+    };
 
     setStatus(
       blended.length ? 'success' : 'error',
