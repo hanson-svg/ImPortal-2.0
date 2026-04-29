@@ -234,6 +234,50 @@
     .map-mode-ring-left  { outline: 2px solid #7c3aed; outline-offset: -2px; }
     .map-mode-ring-right { outline: 2px solid #dc2626; outline-offset: -2px; }
 
+    /* ── Toolset tabs ── */
+    .toolset-tabs {
+      display: flex; align-items: center; gap: 4px;
+      padding: 8px 14px; border-bottom: 1px solid #edf3f2;
+      background: #fafcfc;
+    }
+    .toolset-tabs-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.8px; color: #73b4ae; margin-right: 6px; white-space: nowrap;
+    }
+    .toolset-tab {
+      padding: 4px 13px; border-radius: 6px; font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: all 0.12s; white-space: nowrap;
+      border: 1.5px solid #c0dae1; background: white; color: #375957;
+    }
+    .toolset-tab:hover  { background: #edf3f2; }
+    .toolset-tab.active { background: #375957; color: white; border-color: #375957; }
+
+    /* ── Map edit popover ── */
+    .map-popover {
+      position: absolute; z-index: 200;
+      background: white; border-radius: 9px;
+      border: 1.5px solid #375957;
+      box-shadow: 0 6px 24px rgba(36,58,56,0.18);
+      padding: 14px 16px; min-width: 230px;
+      pointer-events: all;
+    }
+    .popover-title  { font-size: 12px; font-weight: 700; color: #243a38; margin-bottom: 10px; }
+    .popover-field  { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+    .popover-label  { font-size: 11px; font-weight: 600; color: #375957; }
+    .popover-input  {
+      border: 1.5px solid #c0dae1; border-radius: 6px;
+      padding: 6px 10px; font-size: 13px; color: #1a2725; width: 100%;
+    }
+    .popover-input:focus { outline: none; border-color: #375957; }
+    .popover-select {
+      border: 1.5px solid #c0dae1; border-radius: 6px;
+      padding: 6px 10px; font-size: 13px; color: #1a2725; width: 100%;
+      background: white;
+    }
+    .popover-actions { display: flex; gap: 7px; justify-content: flex-end; }
+    .popover-save   { background: #db5d00; color: white; border: none; border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .popover-cancel { background: #f0f5f4; color: #375957; border: 1.5px solid #c0dae1; border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
+
     /* ── Map legend ── */
     .map-legend {
       padding: 8px 14px; display: flex; align-items: center; gap: 16px;
@@ -291,6 +335,11 @@
     .edit-table tr.row-selected td              { background: #fef5ee; }
     .edit-table tr.row-selected td.col-gis      { background: #f8f5f0; }
     .edit-table tr.row-selected td.cell-edited  { background: #fcc084 !important; }
+
+    .edit-table tr.handing-left  td             { background: #ede9fe !important; }
+    .edit-table tr.handing-right td             { background: #fee2e2 !important; }
+    .edit-table tr.handing-left  td.col-gis     { background: #f0ecfd !important; }
+    .edit-table tr.handing-right td.col-gis     { background: #fdf0f0 !important; }
 
     /* ── Premium (currency) cell ── */
     .col-premium { padding: 4px 10px !important; }
@@ -445,23 +494,17 @@
 
       <div class="edit-layout">
 
-        <div class="map-panel">
-          <div class="map-toolbar">
-            <span class="toolbar-label">Handing</span>
-            <div class="handing-btns">
-              <button class="handing-mode-btn active" data-handing="">Navigate</button>
-              <button class="handing-mode-btn mode-left"  data-handing="Left">◀ Left</button>
-              <button class="handing-mode-btn mode-right" data-handing="Right">Right ▶</button>
-            </div>
-            <span class="toolbar-hint">L &nbsp;·&nbsp; R &nbsp;·&nbsp; Esc</span>
+        <div class="map-panel" style="position:relative;">
+          <div class="toolset-tabs">
+            <span class="toolset-tabs-label">View</span>
+            <button class="toolset-tab active" data-toolset="handing">Handing</button>
+            <button class="toolset-tab"        data-toolset="address">Addresses</button>
+            <button class="toolset-tab"        data-toolset="classification">Classification</button>
           </div>
+          <div id="mapToolbar" class="map-toolbar"></div>
           <div id="map"></div>
-          <div class="map-legend">
-            <div class="legend-item"><div class="legend-swatch swatch-unassigned"></div> Unassigned</div>
-            <div class="legend-item"><div class="legend-swatch swatch-left"></div> Left</div>
-            <div class="legend-item"><div class="legend-swatch swatch-right"></div> Right</div>
-            <div class="legend-item"><div class="legend-swatch swatch-unmatched"></div> No match</div>
-          </div>
+          <div id="mapPopover" class="map-popover" style="display:none;"></div>
+          <div id="mapLegend" class="map-legend"></div>
         </div>
 
         <div class="edit-table-panel">

@@ -45,7 +45,7 @@ function renderPreviewTable(rows, containerId) {
   `;
 }
 
-const GIS_COLS = new Set(['PhaseID', 'LotNum', 'BlockNum', 'ST_NUM', 'ST_NAME']);
+const GIS_COLS = new Set(['Street Number', 'Street Name']);
 
 // ── Tableau connection ────────────────────────────────────────────────────────
 const TABLEAU_SERVER        = 'https://10ay.online.tableau.com';
@@ -55,9 +55,25 @@ const PHASE_NAME_COL        = 'Phase';
 const PHASE_ID_COL          = 'Phase ID';
 const TABLEAU_VIEW_URL_NAME = 'PhaseList';
 
+// ── Classification constants ──────────────────────────────────────────────────
+const CLASSIFICATION_OPTIONS = [
+  '40 Foot Compact', '50 Foot Compact', '45 Foot', '50 Foot',
+  '50 Foot RSV', '60 Foot', '75 Foot', '85 Foot'
+];
+const CLASSIFICATION_COLORS = {
+  '40 Foot Compact': '#fcc084',
+  '50 Foot Compact': '#db5d00',
+  '45 Foot':         '#ccd47e',
+  '50 Foot':         '#606426',
+  '50 Foot RSV':     '#73b4ae',
+  '60 Foot':         '#375957',
+  '75 Foot':         '#243a38',
+  '85 Foot':         '#1a2725'
+};
+
 function rowKey(attrs) {
-  const lot   = String(attrs.LotNum   || '').trim();
-  const block = String(attrs.BlockNum || '').trim();
+  const lot   = String(attrs.LotNum   || attrs['Lot #']   || '').trim();
+  const block = String(attrs.BlockNum || attrs['Block #'] || '').trim();
   return block ? `${lot}|${block}` : lot;
 }
 
@@ -69,8 +85,11 @@ let svgContentGroup = null;
 let svgTransform    = { x: 0, y: 0, s: 1 };
 
 // Handing assignment state
-let handingMap    = new Map();   // key → 'Left' | 'Right' | ''
-let activeHanding = '';          // currently active paint mode
+let handingMap        = new Map();   // key → 'Left' | 'Right' | ''
+let activeHanding     = '';          // currently active paint mode
+let activeToolset     = 'handing';   // 'handing' | 'address' | 'classification'
+let classificationMap = new Map();   // key → classification string
+let currentFeatures   = [];          // stored for toolset re-render
 
 function applyMapTransform() {
   if (svgContentGroup) {
@@ -82,7 +101,6 @@ function applyMapTransform() {
 function styleFeatureGroup(fg, state) {
   const key     = fg.dataset.key;
   const matched = svgMatchedKeys.has(key);
-  const handing = handingMap.get(key) || '';
 
   fg.querySelectorAll('path').forEach(p => {
     if (!matched) {
@@ -90,40 +108,43 @@ function styleFeatureGroup(fg, state) {
       p.setAttribute('stroke', '#a0a87a'); p.setAttribute('stroke-width', '1');
       return;
     }
-    // Resolve fill/stroke by handing
-    const fill   = handing === 'Left'  ? '#ede9fe'
-                 : handing === 'Right' ? '#fee2e2'
-                 : '#73b4ae';
-    const stroke = handing === 'Left'  ? '#7c3aed'
-                 : handing === 'Right' ? '#dc2626'
-                 : '#375957';
+
+    let fill, stroke;
+    if (activeToolset === 'handing') {
+      const h = handingMap.get(key) || '';
+      fill   = h === 'Left' ? '#ede9fe' : h === 'Right' ? '#fee2e2' : '#73b4ae';
+      stroke = h === 'Left' ? '#7c3aed' : h === 'Right' ? '#dc2626' : '#375957';
+    } else if (activeToolset === 'classification') {
+      const cls = classificationMap.get(key) || '';
+      fill   = CLASSIFICATION_COLORS[cls] || '#73b4ae';
+      stroke = CLASSIFICATION_COLORS[cls] || '#375957';
+    } else {
+      fill = '#73b4ae'; stroke = '#375957';
+    }
 
     if (state === 'selected') {
-      p.setAttribute('fill', handing === 'Left'  ? '#ddd6fe'
-                           : handing === 'Right' ? '#fecaca'
-                           : '#db5d00');
+      const h = activeToolset === 'handing' ? (handingMap.get(key) || '') : '';
+      p.setAttribute('fill',   h === 'Left' ? '#ddd6fe' : h === 'Right' ? '#fecaca' : '#db5d00');
       p.setAttribute('fill-opacity', '0.82');
-      p.setAttribute('stroke', handing === 'Left'  ? '#5b21b6'
-                              : handing === 'Right' ? '#b91c1c'
-                              : '#a34500');
+      p.setAttribute('stroke', h === 'Left' ? '#5b21b6' : h === 'Right' ? '#b91c1c' : '#a34500');
       p.setAttribute('stroke-width', '2.5');
     } else if (state === 'hover') {
       p.setAttribute('fill', fill); p.setAttribute('fill-opacity', '0.78');
       p.setAttribute('stroke', stroke); p.setAttribute('stroke-width', '1.8');
     } else {
       p.setAttribute('fill', fill);
-      p.setAttribute('fill-opacity', handing ? '0.68' : '0.5');
+      p.setAttribute('fill-opacity', (activeToolset === 'handing' && handingMap.get(key)) || activeToolset === 'classification' ? '0.68' : '0.5');
       p.setAttribute('stroke', stroke); p.setAttribute('stroke-width', '1.2');
     }
   });
 
-  // Lot label color
-  fg.querySelectorAll('text').forEach(t =>
-    t.setAttribute('fill',
-      handing === 'Left'  ? '#5b21b6' :
-      handing === 'Right' ? '#991b1b' : '#1a2725'
-    )
-  );
+  // Text label color — only relevant for handing toolset
+  if (activeToolset === 'handing') {
+    const h = handingMap.get(key) || '';
+    fg.querySelectorAll('text').forEach(t =>
+      t.setAttribute('fill', h === 'Left' ? '#5b21b6' : h === 'Right' ? '#991b1b' : '#1a2725')
+    );
+  }
 }
 
 function updateMapFeatureStyle(key) {
@@ -137,6 +158,9 @@ function syncTableHanding(key, handing) {
   if (!wrap) return;
   const tr = wrap.querySelector(`tr[data-key="${key}"]`);
   if (!tr) return;
+  tr.classList.remove('handing-left', 'handing-right');
+  if (handing === 'Left')  tr.classList.add('handing-left');
+  if (handing === 'Right') tr.classList.add('handing-right');
   const sel = tr.querySelector('select[data-col="Handing"]');
   if (sel) {
     sel.value = handing;
@@ -155,6 +179,8 @@ function selectMapByKey(key) {
 
 function renderSVGMap(features, blended) {
   const container = document.getElementById('map');
+
+  currentFeatures = features;
 
   // Clean up previous window listeners
   if (svgEl?._cleanup) svgEl._cleanup();
@@ -229,22 +255,29 @@ function renderSVGMap(features, blended) {
     });
     styleFeatureGroup(fg, 'default');
 
-    // Lot label at ring centroid
+    // Centroid label / marker (toolset-aware)
     const ring0 = f.geometry.rings[0];
     if (ring0?.length) {
       const cx = ring0.reduce((s, p) => s + p[0], 0) / ring0.length;
       const cy = ring0.reduce((s, p) => s + p[1], 0) / ring0.length;
       const [sx, sy] = project([cx, cy]);
-      const txt = document.createElementNS(NS, 'text');
-      txt.setAttribute('x', sx); txt.setAttribute('y', sy);
-      txt.setAttribute('text-anchor', 'middle');
-      txt.setAttribute('dominant-baseline', 'middle');
-      txt.setAttribute('font-size', '8');
-      txt.setAttribute('font-family', '-apple-system, BlinkMacSystemFont, sans-serif');
-      txt.setAttribute('fill', '#1a2725');
-      txt.setAttribute('pointer-events', 'none');
-      txt.textContent = String(f.attributes.LotNum || '');
-      fg.appendChild(txt);
+
+      const label = activeToolset === 'address'
+        ? [f.attributes.ST_NUM, f.attributes.ST_NAME].filter(Boolean).join(' ')
+        : activeToolset === 'classification' ? ''
+        : String(f.attributes.LotNum || '');
+      if (label) {
+        const txt = document.createElementNS(NS, 'text');
+        txt.setAttribute('x', sx); txt.setAttribute('y', sy);
+        txt.setAttribute('text-anchor', 'middle');
+        txt.setAttribute('dominant-baseline', 'middle');
+        txt.setAttribute('font-size', activeToolset === 'address' ? '6' : '8');
+        txt.setAttribute('font-family', '-apple-system, BlinkMacSystemFont, sans-serif');
+        txt.setAttribute('fill', '#1a2725');
+        txt.setAttribute('pointer-events', 'none');
+        txt.textContent = label;
+        fg.appendChild(txt);
+      }
     }
 
     // Hover
@@ -255,22 +288,21 @@ function renderSVGMap(features, blended) {
       if (fg !== svgActiveGroup) styleFeatureGroup(fg, 'default');
     });
 
-    // Click — assignment paint or navigate/select
+    // Click — toolset-aware
     if (matched) {
       fg.addEventListener('click', e => {
         if (dragged) return;
         e.stopPropagation();
-        if (activeHanding !== '') {
-          // Paint mode: assign handing immediately, no selection change needed
+        if (activeToolset === 'handing' && activeHanding !== '') {
           handingMap.set(key, activeHanding);
           styleFeatureGroup(fg, fg === svgActiveGroup ? 'selected' : 'default');
           syncTableHanding(key, activeHanding);
         } else {
-          // Navigate mode: select + jump to table row
           if (svgActiveGroup && svgActiveGroup !== fg) styleFeatureGroup(svgActiveGroup, 'default');
           svgActiveGroup = fg;
           styleFeatureGroup(fg, 'selected');
-          highlightTableRow(key);
+          if (activeToolset === 'address')        showAddressPopover(key, e);
+          if (activeToolset === 'classification') showClassificationPopover(key, e);
         }
       });
     }
@@ -364,7 +396,7 @@ function renderEditTable(blended) {
           <tr data-key="${rowKey(row)}" data-idx="${idx}">
             ${keys.map(k => {
               if (GIS_COLS.has(k)) {
-                return `<td class="col-gis" title="${row[k] ?? ''}">${row[k] ?? ''}</td>`;
+                return `<td class="col-gis" data-col="${k}" title="${row[k] ?? ''}">${row[k] ?? ''}</td>`;
               } else if (k === 'Premium') {
                 return `<td class="col-premium">
                   <div class="premium-wrapper">
@@ -379,6 +411,15 @@ function renderEditTable(blended) {
                     <option value="" ${!row[k] ? 'selected' : ''}>—</option>
                     <option value="Left"  ${row[k] === 'Left'  ? 'selected' : ''}>Left</option>
                     <option value="Right" ${row[k] === 'Right' ? 'selected' : ''}>Right</option>
+                  </select>
+                </td>`;
+              } else if (k === 'Homesite Classification') {
+                return `<td class="col-handing">
+                  <select class="handing-select" data-col="Homesite Classification">
+                    <option value="" ${!row[k] ? 'selected' : ''}>—</option>
+                    ${CLASSIFICATION_OPTIONS.map(opt =>
+                      `<option value="${opt}" ${row[k] === opt ? 'selected' : ''}>${opt}</option>`
+                    ).join('')}
                   </select>
                 </td>`;
               } else {
@@ -407,13 +448,29 @@ function renderEditTable(blended) {
     el.addEventListener('input',  () => el.closest('td').classList.add('cell-edited'));
   });
 
-  // Handing — mark cell edited + sync map color
-  wrap.querySelectorAll('.handing-select').forEach(sel => {
+  // Handing — mark cell edited + sync map color + row highlight
+  wrap.querySelectorAll('select[data-col="Handing"]').forEach(sel => {
     sel.addEventListener('change', () => {
       const key = sel.closest('tr').dataset.key;
+      const tr  = sel.closest('tr');
       handingMap.set(key, sel.value);
+      tr.classList.remove('handing-left', 'handing-right');
+      if (sel.value === 'Left')  tr.classList.add('handing-left');
+      if (sel.value === 'Right') tr.classList.add('handing-right');
       updateMapFeatureStyle(key);
       sel.closest('td').classList.toggle('cell-edited', sel.value !== '');
+    });
+  });
+
+  // Classification — sync map color
+  wrap.querySelectorAll('select[data-col="Homesite Classification"]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const key = sel.closest('tr').dataset.key;
+      classificationMap.set(key, sel.value);
+      const idx = blendedData.findIndex(r => rowKey(r) === key);
+      if (idx !== -1) blendedData[idx]['Homesite Classification'] = sel.value;
+      updateMapFeatureStyle(key);
+      sel.closest('td').classList.toggle('cell-edited', !!sel.value);
     });
   });
 
@@ -451,8 +508,21 @@ function getEditedData() {
 }
 
 function initMapAndEditor(features, blended) {
-  blendedData = blended;
-  handingMap   = new Map();   // reset assignments for new dataset
+  blendedData       = blended;
+  currentFeatures   = features;
+  handingMap        = new Map();
+  classificationMap = new Map(
+    blended
+      .filter(r => r['Homesite Classification'])
+      .map(r => [rowKey(r), r['Homesite Classification']])
+  );
+  activeToolset     = 'handing';
+  activeHanding     = '';
+  document.querySelectorAll('.toolset-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.toolset === 'handing')
+  );
+  renderToolbarContent('handing');
+  renderLegendContent('handing');
   renderEditTable(blended);
   setTimeout(() => renderSVGMap(features, blended), 0);
 }
@@ -558,31 +628,218 @@ async function initTableau(forceRefresh = false) {
   }
 }
 
+// ── Toolset switcher ──────────────────────────────────────────────────────────
+function renderToolbarContent(toolset) {
+  const tb = document.getElementById('mapToolbar');
+  if (!tb) return;
+  if (toolset === 'handing') {
+    tb.innerHTML = `
+      <span class="toolbar-label">Handing</span>
+      <div class="handing-btns">
+        <button class="handing-mode-btn active" data-handing="">Navigate</button>
+        <button class="handing-mode-btn mode-left"  data-handing="Left">&#9664; Left</button>
+        <button class="handing-mode-btn mode-right" data-handing="Right">Right &#9654;</button>
+      </div>
+      <span class="toolbar-hint">L &nbsp;&middot;&nbsp; R &nbsp;&middot;&nbsp; Esc</span>`;
+    attachHandingToolbarListeners();
+  } else if (toolset === 'address') {
+    tb.innerHTML = `
+      <span class="toolbar-label">Address Editor</span>
+      <span class="toolbar-hint" style="margin-left:0">Click a parcel to edit address</span>`;
+  } else {
+    tb.innerHTML = `
+      <span class="toolbar-label">Classification</span>
+      <span class="toolbar-hint" style="margin-left:0">Click a parcel to assign a homesite classification</span>`;
+  }
+}
+
+function renderLegendContent(toolset) {
+  const lg = document.getElementById('mapLegend');
+  if (!lg) return;
+  if (toolset === 'handing') {
+    lg.innerHTML = `
+      <div class="legend-item"><div class="legend-swatch swatch-unassigned"></div> Unassigned</div>
+      <div class="legend-item"><div class="legend-swatch swatch-left"></div> Left</div>
+      <div class="legend-item"><div class="legend-swatch swatch-right"></div> Right</div>
+      <div class="legend-item"><div class="legend-swatch swatch-unmatched"></div> No match</div>`;
+  } else if (toolset === 'address') {
+    lg.innerHTML = `
+      <div class="legend-item"><div class="legend-swatch swatch-unassigned"></div> Matched</div>
+      <div class="legend-item"><div class="legend-swatch swatch-unmatched"></div> No match</div>`;
+  } else {
+    const swatches = CLASSIFICATION_OPTIONS.map(opt =>
+      `<div class="legend-item">
+        <div class="legend-swatch" style="background:${CLASSIFICATION_COLORS[opt]};border:1.5px solid ${CLASSIFICATION_COLORS[opt]};"></div>
+        ${opt}
+      </div>`
+    ).join('');
+    lg.innerHTML = swatches +
+      `<div class="legend-item"><div class="legend-swatch" style="background:#c0dae1;border:1.5px dashed #73b4ae;"></div> Unassigned</div>
+       <div class="legend-item"><div class="legend-swatch swatch-unmatched"></div> No match</div>`;
+  }
+}
+
+// ── Map popovers ──────────────────────────────────────────────────────────────
+function showMapPopover(html, e) {
+  const popover = document.getElementById('mapPopover');
+  const panel   = document.querySelector('.map-panel');
+  const rect    = panel.getBoundingClientRect();
+  popover.innerHTML = html;
+  popover.style.display = 'block';
+  let left = e.clientX - rect.left + 12;
+  let top  = e.clientY - rect.top  + 12;
+  popover.style.left = left + 'px';
+  popover.style.top  = top  + 'px';
+  requestAnimationFrame(() => {
+    const pr   = popover.getBoundingClientRect();
+    const panR = panel.getBoundingClientRect();
+    if (pr.right  > panR.right  - 8) left -= pr.width  + 24;
+    if (pr.bottom > panR.bottom - 8) top  -= pr.height + 24;
+    popover.style.left = Math.max(8, left) + 'px';
+    popover.style.top  = Math.max(8, top)  + 'px';
+  });
+}
+
+function hideMapPopover() {
+  const p = document.getElementById('mapPopover');
+  if (p) p.style.display = 'none';
+}
+
+function showAddressPopover(key, e) {
+  const row = blendedData.find(r => rowKey(r) === key);
+  if (!row) return;
+  showMapPopover(`
+    <div class="popover-title">Edit Address</div>
+    <div class="popover-field">
+      <span class="popover-label">Street Number</span>
+      <input class="popover-input" id="popStNum" value="${String(row['Street Number'] ?? '').replace(/"/g, '&quot;')}">
+    </div>
+    <div class="popover-field">
+      <span class="popover-label">Street Name</span>
+      <input class="popover-input" id="popStName" value="${String(row['Street Name'] ?? '').replace(/"/g, '&quot;')}">
+    </div>
+    <div class="popover-actions">
+      <button class="popover-cancel" id="popCancel">Cancel</button>
+      <button class="popover-save"   id="popSave">Save</button>
+    </div>`, e);
+
+  document.getElementById('popSave').onclick = () => {
+    const stNum  = document.getElementById('popStNum').value.trim();
+    const stName = document.getElementById('popStName').value.trim();
+    const idx = blendedData.findIndex(r => rowKey(r) === key);
+    if (idx !== -1) { blendedData[idx]['Street Number'] = stNum; blendedData[idx]['Street Name'] = stName; }
+    const wrap = document.getElementById('editTableWrap');
+    const tr   = wrap?.querySelector(`tr[data-key="${key}"]`);
+    if (tr) {
+      tr.querySelectorAll('td.col-gis[data-col]').forEach(td => {
+        if (td.dataset.col === 'Street Number') td.textContent = stNum;
+        if (td.dataset.col === 'Street Name')   td.textContent = stName;
+      });
+    }
+    if (svgEl) {
+      const fg  = svgEl.querySelector(`g[data-key="${key}"]`);
+      const txt = fg?.querySelector('text');
+      if (txt) txt.textContent = [stNum, stName].filter(Boolean).join(' ');
+    }
+    hideMapPopover();
+  };
+  document.getElementById('popCancel').onclick = hideMapPopover;
+}
+
+function showClassificationPopover(key, e) {
+  const row     = blendedData.find(r => rowKey(r) === key);
+  const current = classificationMap.get(key) || row?.['Homesite Classification'] || '';
+  const options = CLASSIFICATION_OPTIONS.map(opt =>
+    `<option value="${opt}" ${current === opt ? 'selected' : ''}>${opt}</option>`
+  ).join('');
+  showMapPopover(`
+    <div class="popover-title">Homesite Classification</div>
+    <div class="popover-field">
+      <select class="popover-select" id="popClassSel">
+        <option value="">— unassigned —</option>
+        ${options}
+      </select>
+    </div>
+    <div class="popover-actions">
+      <button class="popover-cancel" id="popCancel">Cancel</button>
+      <button class="popover-save"   id="popSave">Save</button>
+    </div>`, e);
+
+  document.getElementById('popSave').onclick = () => {
+    const cls = document.getElementById('popClassSel').value;
+    classificationMap.set(key, cls);
+    const idx = blendedData.findIndex(r => rowKey(r) === key);
+    if (idx !== -1) blendedData[idx]['Homesite Classification'] = cls;
+    const wrap = document.getElementById('editTableWrap');
+    const sel  = wrap?.querySelector(`tr[data-key="${key}"] select[data-col="Homesite Classification"]`);
+    if (sel) { sel.value = cls; sel.closest('td').classList.toggle('cell-edited', !!cls); }
+    updateMapFeatureStyle(key);
+    // Also update the centroid rect color
+    if (svgEl) {
+      const fg   = svgEl.querySelector(`g[data-key="${key}"]`);
+      const rect = fg?.querySelector('rect');
+      if (rect) rect.setAttribute('fill', CLASSIFICATION_COLORS[cls] || '#c0dae1');
+    }
+    hideMapPopover();
+  };
+  document.getElementById('popCancel').onclick = hideMapPopover;
+}
+
+function attachHandingToolbarListeners() {
+  document.querySelectorAll('.handing-mode-btn').forEach(btn =>
+    btn.addEventListener('click', () => setHandingMode(btn.dataset.handing))
+  );
+}
+
+function setHandingMode(handing) {
+  activeHanding = handing;
+  document.querySelectorAll('.handing-mode-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.handing === handing)
+  );
+  const mapEl = document.getElementById('map');
+  mapEl.classList.remove('map-mode-ring-left', 'map-mode-ring-right');
+  if (handing === 'Left')  mapEl.classList.add('map-mode-ring-left');
+  if (handing === 'Right') mapEl.classList.add('map-mode-ring-right');
+  if (svgEl) svgEl.style.cursor = handing ? 'crosshair' : 'grab';
+}
+
+function switchToolset(toolset) {
+  activeToolset = toolset;
+  activeHanding = '';
+  document.querySelectorAll('.toolset-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.toolset === toolset)
+  );
+  document.getElementById('map').classList.remove('map-mode-ring-left', 'map-mode-ring-right');
+  hideMapPopover();
+  renderToolbarContent(toolset);
+  renderLegendContent(toolset);
+  if (currentFeatures.length) renderSVGMap(currentFeatures, blendedData);
+}
+
 // ── Handing toolbar ───────────────────────────────────────────────────────────
 function setupHandingToolbar() {
-  const btns  = document.querySelectorAll('.handing-mode-btn');
-  const mapEl = document.getElementById('map');
-
-  function setMode(handing) {
-    activeHanding = handing;
-    btns.forEach(b => b.classList.toggle('active', b.dataset.handing === handing));
-    mapEl.classList.remove('map-mode-ring-left', 'map-mode-ring-right');
-    if (handing === 'Left')  mapEl.classList.add('map-mode-ring-left');
-    if (handing === 'Right') mapEl.classList.add('map-mode-ring-right');
-    if (svgEl) svgEl.style.cursor = handing ? 'crosshair' : 'grab';
-  }
-
-  btns.forEach(btn => btn.addEventListener('click', () => setMode(btn.dataset.handing)));
-
   document.addEventListener('keydown', e => {
     if (e.target.matches('input, select, [contenteditable]')) return;
-    if (e.key === 'l' || e.key === 'L') setMode('Left');
-    if (e.key === 'r' || e.key === 'R') setMode('Right');
-    if (e.key === 'Escape') setMode('');
+    if (e.key === 'Escape') { hideMapPopover(); if (activeToolset === 'handing') setHandingMode(''); return; }
+    if (activeToolset !== 'handing') return;
+    if (e.key === 'l' || e.key === 'L') setHandingMode('Left');
+    if (e.key === 'r' || e.key === 'R') setHandingMode('Right');
   });
 }
 
 setupHandingToolbar();
+
+document.querySelectorAll('.toolset-tab').forEach(tab =>
+  tab.addEventListener('click', () => switchToolset(tab.dataset.toolset))
+);
+
+document.addEventListener('click', e => {
+  const popover = document.getElementById('mapPopover');
+  if (popover && popover.style.display !== 'none' &&
+      !popover.contains(e.target) && !e.target.closest('#map')) {
+    hideMapPopover();
+  }
+});
 
 // ── Tableau connection init ───────────────────────────────────────────────────
 (async () => {
@@ -716,13 +973,11 @@ document.getElementById('processBtn').addEventListener('click', async () => {
       if (match) {
         blended.push({
           ...row,
-          PhaseID:  match.attributes.PhaseID,
-          LotNum:   match.attributes.LotNum,
-          BlockNum: match.attributes.BlockNum,
-          ST_NUM:   match.attributes.ST_NUM,
-          ST_NAME:  match.attributes.ST_NAME,
-          Premium:  '',
-          Handing:  ''
+          'Street Number': match.attributes.ST_NUM ?? '',
+          'Street Name':   match.attributes.ST_NAME ?? '',
+          Premium:         '',
+          Handing:         '',
+          'Homesite Classification': row['Homesite Classification'] ?? ''
         });
       }
     });
