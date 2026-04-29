@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ImPortal</title>
+  <link rel="icon" type="image/png" href="icon.png">
+  <script src="lib/xlsx.full.min.js"></script>
+  <style>
+    /*
+      Betenbough Homes brand palette
+      Teal family  — #1a2725 · #243a38 · #375957 · #73b4ae · #c9e2d9 · #c0dae1
+      Orange family — #db5d00 · #fcc084 · #feddba
+      Olive family  — #606426 · #ccd47e · #e4e2bd
+    */
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+      background: #edf3f2;
+      color: #1a2725;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(135deg, #243a38, #1a2725);
+      color: white;
+      padding: 0 40px;
+      display: flex;
+      align-items: center;
+      height: 60px;
+      box-shadow: 0 2px 10px rgba(26,39,37,0.35);
+    }
+
+    .header-logo { display: flex; align-items: center; gap: 10px; }
+    .header-logo svg { opacity: 0.85; }
+    header h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.2px; }
+
+    .header-divider {
+      width: 1px; height: 24px;
+      background: rgba(255,255,255,0.2);
+      margin: 0 18px;
+    }
+
+    header .subtitle { font-size: 13px; opacity: 0.55; font-weight: 400; }
+
+    /* ── Layout ── */
+    main { padding: 28px 32px 60px; }
+
+    /* ── Card ── */
+    .card {
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 1px 3px rgba(36,58,56,0.07), 0 4px 16px rgba(36,58,56,0.05);
+      padding: 28px 32px;
+      margin-bottom: 18px;
+    }
+
+    .card-label {
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 1px;
+      color: #73b4ae; margin-bottom: 20px;
+    }
+
+    /* ── Input Row ── */
+    .input-row {
+      display: grid;
+      grid-template-columns: 260px 1fr auto;
+      gap: 16px; align-items: end;
+    }
+
+    .field-group { display: flex; flex-direction: column; gap: 7px; }
+
+    .field-label { font-size: 13px; font-weight: 500; color: #243a38; }
+
+    input[type="text"], input[type="password"] {
+      border: 1.5px solid #c0dae1;
+      border-radius: 7px; padding: 10px 14px;
+      font-size: 14px; color: #1a2725; background: white;
+      transition: border-color 0.15s, box-shadow 0.15s; width: 100%;
+    }
+    input[type="text"]:focus, input[type="password"]:focus {
+      outline: none; border-color: #375957;
+      box-shadow: 0 0 0 3px rgba(55,89,87,0.14);
+    }
+    input[type="text"]::placeholder, input[type="password"]::placeholder { color: #a8c4c0; }
+
+    /* ── File Input ── */
+    .file-input-wrapper { position: relative; }
+    .file-input-wrapper input[type="file"] {
+      position: absolute; inset: 0; opacity: 0;
+      width: 100%; height: 100%; cursor: pointer; z-index: 1;
+    }
+    .file-display {
+      border: 1.5px dashed #a8c4c0; border-radius: 7px;
+      padding: 10px 14px; font-size: 14px; color: #73b4ae;
+      cursor: pointer; transition: border-color 0.15s, background 0.15s, color 0.15s;
+      display: flex; align-items: center; gap: 8px; user-select: none;
+    }
+    .file-display:hover { border-color: #375957; background: #edf6f5; color: #375957; }
+    .file-display.has-file { border-style: solid; border-color: #375957; background: #edf6f5; color: #1a2725; }
+    .file-display.has-file svg { color: #375957; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 10px 22px; border: none; border-radius: 7px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+      transition: background 0.15s, box-shadow 0.15s, opacity 0.15s; white-space: nowrap;
+    }
+    .btn-primary { background: #db5d00; color: white; box-shadow: 0 1px 4px rgba(219,93,0,0.35); }
+    .btn-primary:hover  { background: #c25200; }
+    .btn-primary:active { background: #a34500; }
+    .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+
+    .btn-success { background: #375957; color: white; box-shadow: 0 1px 4px rgba(55,89,87,0.35); }
+    .btn-success:hover  { background: #243a38; }
+    .btn-success:active { background: #1a2725; }
+
+    .btn-secondary { background: #f0f5f4; color: #375957; border: 1.5px solid #c0dae1; box-shadow: none; }
+    .btn-secondary:hover { background: #e1eeec; border-color: #375957; }
+
+    /* ── Status Bar ── */
+    .status-bar {
+      border-radius: 8px; padding: 12px 16px; font-size: 14px;
+      display: none; align-items: center; gap: 10px; margin-bottom: 18px;
+    }
+    .status-bar.visible { display: flex; }
+    .status-bar.loading { background: #feddba; color: #7a2f00; border: 1px solid #fcc084; }
+    .status-bar.success { background: #c9e2d9; color: #1a2725; border: 1px solid #73b4ae; }
+    .status-bar.info    { background: #c0dae1; color: #1a2725; border: 1px solid #73b4ae; }
+    .status-bar.error   { background: #fff0ee; color: #7a1e00; border: 1px solid #f5c2b8; }
+
+    .spinner {
+      width: 15px; height: 15px;
+      border: 2px solid currentColor; border-top-color: transparent;
+      border-radius: 50%; animation: spin 0.65s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Preview Panels ── */
+    .section-label {
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 1px;
+      color: #73b4ae; margin-bottom: 14px;
+    }
+
+    .preview-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 18px; }
+
+    .panel {
+      background: white; border-radius: 10px;
+      box-shadow: 0 1px 3px rgba(36,58,56,0.07), 0 4px 16px rgba(36,58,56,0.04);
+      overflow: hidden;
+    }
+    .panel-head { padding: 11px 16px; display: flex; align-items: center; justify-content: space-between; }
+    .panel-head-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; }
+    .panel-head-badge { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 20px; }
+
+    .panel-gis   .panel-head        { background: #feddba; }
+    .panel-gis   .panel-head-title  { color: #db5d00; }
+    .panel-gis   .panel-head-badge  { background: #fcc084; color: #7a2f00; }
+
+    .panel-sheet .panel-head        { background: #e4e2bd; }
+    .panel-sheet .panel-head-title  { color: #606426; }
+    .panel-sheet .panel-head-badge  { background: #ccd47e; color: #3d4118; }
+
+    .panel-blend .panel-head        { background: #c9e2d9; }
+    .panel-blend .panel-head-title  { color: #243a38; }
+    .panel-blend .panel-head-badge  { background: #73b4ae; color: #1a2725; }
+
+    .panel-meta { padding: 7px 16px 10px; font-size: 12px; color: #375957; border-bottom: 1px solid #edf3f2; }
+    .panel-table-wrap { overflow-x: auto; max-height: 280px; overflow-y: auto; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th {
+      background: #f5faf9; padding: 8px 10px; text-align: left;
+      font-weight: 600; color: #375957; border-bottom: 1px solid #dde8e6;
+      position: sticky; top: 0; z-index: 1; white-space: nowrap;
+    }
+    td {
+      padding: 7px 10px; border-bottom: 1px solid #edf3f2; color: #1a2725;
+      max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f5faf9; }
+
+    .empty-state { padding: 24px 16px; text-align: center; font-size: 13px; color: #a8c4c0; }
+
+    /* ── Geospatial Edit Section ── */
+    .edit-layout {
+      display: grid;
+      grid-template-columns: minmax(400px, 32%) 1fr;
+      gap: 16px; margin-bottom: 18px; align-items: stretch;
+    }
+
+    .map-panel {
+      background: white; border-radius: 10px;
+      box-shadow: 0 1px 3px rgba(36,58,56,0.07), 0 4px 16px rgba(36,58,56,0.04);
+      overflow: hidden;
+    }
+
+    #map { height: 450px; width: 100%; }
+
+    /* ── Map toolbar ── */
+    .map-toolbar {
+      padding: 9px 14px; display: flex; align-items: center; gap: 12px;
+      border-bottom: 1px solid #edf3f2; background: #fafcfc; flex-shrink: 0;
+    }
+    .toolbar-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.8px; color: #73b4ae; white-space: nowrap;
+    }
+    .handing-btns { display: flex; gap: 5px; }
+    .handing-mode-btn {
+      padding: 4px 13px; border-radius: 6px; font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: all 0.12s; white-space: nowrap;
+      border: 1.5px solid #c0dae1; background: white; color: #375957;
+    }
+    .handing-mode-btn:hover  { background: #edf3f2; }
+    .handing-mode-btn.active { background: #375957; color: white; border-color: #375957; }
+
+    .handing-mode-btn.mode-left                  { border-color: #a78bfa; color: #5b21b6; }
+    .handing-mode-btn.mode-left:hover            { background: #ede9fe; }
+    .handing-mode-btn.mode-left.active           { background: #7c3aed; color: white; border-color: #7c3aed; }
+
+    .handing-mode-btn.mode-right                 { border-color: #f87171; color: #dc2626; }
+    .handing-mode-btn.mode-right:hover           { background: #fee2e2; }
+    .handing-mode-btn.mode-right.active          { background: #dc2626; color: white; border-color: #dc2626; }
+
+    .toolbar-hint { font-size: 11px; color: #a8c4c0; margin-left: auto; }
+
+    .map-mode-ring-left  { outline: 2px solid #7c3aed; outline-offset: -2px; }
+    .map-mode-ring-right { outline: 2px solid #dc2626; outline-offset: -2px; }
+
+    /* ── Map legend ── */
+    .map-legend {
+      padding: 8px 14px; display: flex; align-items: center; gap: 16px;
+      font-size: 12px; color: #375957; border-top: 1px solid #edf3f2; flex-shrink: 0;
+    }
+    .legend-item { display: flex; align-items: center; gap: 5px; }
+    .legend-swatch { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+    .swatch-unassigned { background: #73b4ae;  border: 1.5px solid #375957; }
+    .swatch-left       { background: #ede9fe;  border: 1.5px solid #a78bfa; }
+    .swatch-right      { background: #fee2e2;  border: 1.5px solid #f87171; }
+    .swatch-unmatched  { background: #e4e2bd;  border: 1.5px dashed #606426; }
+
+    .edit-table-panel {
+      background: white; border-radius: 10px;
+      box-shadow: 0 1px 3px rgba(36,58,56,0.07), 0 4px 16px rgba(36,58,56,0.04);
+      overflow: hidden; display: flex; flex-direction: column;
+    }
+
+    .edit-table-header {
+      padding: 12px 16px; border-bottom: 1px solid #edf3f2;
+      display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+    }
+    .edit-table-header-title {
+      font-size: 12px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.8px; color: #243a38;
+    }
+    .edit-hint { font-size: 11px; color: #73b4ae; }
+
+    .edit-table-wrap { flex: 1; overflow: auto; min-height: 300px; }
+
+    /* Edit table */
+    .edit-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .edit-table th {
+      background: #f5faf9; padding: 8px 10px; text-align: left;
+      font-weight: 600; color: #375957; border-bottom: 1px solid #dde8e6;
+      position: sticky; top: 0; z-index: 1; white-space: nowrap;
+    }
+    .edit-table th.col-gis { color: #a8c4c0; }
+    .edit-table td {
+      padding: 7px 10px; border-bottom: 1px solid #edf3f2;
+      max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .edit-table tr:last-child td { border-bottom: none; }
+
+    .edit-table td.col-gis { color: #a8c4c0; background: #fafcfc; font-size: 11px; cursor: default; }
+    .edit-table td.col-sheet { color: #1a2725; cursor: text; transition: background 0.1s; }
+    .edit-table td.col-sheet:hover { background: #faf8f5; }
+    .edit-table td.col-sheet:focus {
+      outline: 2px solid #db5d00; outline-offset: -2px;
+      background: #fffaf7; overflow: visible; white-space: normal; min-width: 120px;
+    }
+    .edit-table td.cell-edited          { background: #feddba !important; color: #7a2f00; }
+    .edit-table td.cell-edited:focus    { background: #fec78f !important; }
+
+    .edit-table tr.row-selected td              { background: #fef5ee; }
+    .edit-table tr.row-selected td.col-gis      { background: #f8f5f0; }
+    .edit-table tr.row-selected td.cell-edited  { background: #fcc084 !important; }
+
+    /* ── Premium (currency) cell ── */
+    .col-premium { padding: 4px 10px !important; }
+    .premium-wrapper { display: flex; align-items: center; gap: 2px; }
+    .dollar-sign { font-size: 11px; color: #375957; font-weight: 600; flex-shrink: 0; }
+    .premium-input {
+      width: 100%; border: none; background: transparent;
+      font-size: 12px; font-family: inherit; color: #1a2725;
+      padding: 3px 0; outline: none;
+      -moz-appearance: textfield;
+    }
+    .premium-input::-webkit-outer-spin-button,
+    .premium-input::-webkit-inner-spin-button { -webkit-appearance: none; }
+    .premium-input:focus { outline: 2px solid #db5d00; outline-offset: -1px; border-radius: 2px; }
+
+    /* ── Handing (select) cell ── */
+    .col-handing { padding: 4px 10px !important; }
+    .handing-select {
+      border: none; background: transparent;
+      font-size: 12px; font-family: inherit; color: #1a2725;
+      cursor: pointer; padding: 3px 0; width: 100%; outline: none;
+      appearance: auto;
+    }
+    .handing-select:focus { outline: 2px solid #db5d00; outline-offset: -1px; }
+
+    /* Edited state for input/select cells */
+    .edit-table td.cell-edited .premium-input,
+    .edit-table td.cell-edited .handing-select { color: #7a2f00; }
+
+    /* ── Download Footer ── */
+    .download-row { display: flex; align-items: center; justify-content: space-between; }
+    .match-stats  { font-size: 14px; color: #375957; }
+    .match-count  { font-size: 26px; font-weight: 700; color: #243a38; line-height: 1; }
+    .match-label  { font-size: 13px; color: #73b4ae; margin-top: 3px; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-logo">
+      <img src="icon.png" width="34" height="34" style="border-radius:8px;display:block;" alt="">
+      <h1>ImPortal</h1>
+    </div>
+    <div class="header-divider"></div>
+    <span class="subtitle">Betenbough Homes — Parcel Data Tool</span>
+  </header>
+
+  <main>
+
+    <!-- Tableau Connection -->
+    <div class="card" id="tableauCard">
+      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <span class="field-label" style="margin:0">Tableau Connection</span>
+        <span id="connectionStatus" style="color:#73b4ae; font-size:0.85rem">Not configured</span>
+        <button id="toggleCredBtn" class="btn btn-secondary" style="margin-left:auto; padding:6px 14px; font-size:13px;">⚙ Configure</button>
+      </div>
+      <div id="credForm" style="display:none; grid-template-columns:1fr 1fr auto; gap:8px; align-items:end; margin-top:14px;">
+        <div class="field-group">
+          <span class="field-label">PAT Name</span>
+          <input type="text" id="patName" placeholder="My Token Name">
+        </div>
+        <div class="field-group">
+          <span class="field-label">PAT Secret</span>
+          <input type="password" id="patSecret" placeholder="••••••••">
+        </div>
+        <button id="saveCredBtn" class="btn btn-primary">Save &amp; Connect</button>
+      </div>
+    </div>
+
+    <!-- Inputs -->
+    <div class="card">
+      <div class="card-label">Data Sources</div>
+      <div class="input-row">
+        <div class="field-group">
+          <span class="field-label">Phase</span>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <select id="phaseSelect" style="flex:1; padding:8px 10px; border-radius:7px; border:1.5px solid #c0dae1; background:white; color:#1a2725; font-size:14px; height:42px; transition:border-color 0.15s;">
+              <option value="">— configure Tableau connection above —</option>
+            </select>
+            <button id="refreshPhasesBtn" class="btn btn-secondary" title="Reload phase list" style="padding:8px 12px; font-size:16px; height:42px;">↻</button>
+          </div>
+        </div>
+        <div class="field-group">
+          <span class="field-label">Spreadsheet File</span>
+          <div class="file-input-wrapper">
+            <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
+            <div class="file-display" id="fileDisplay">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              Choose CSV or Excel file…
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="processBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+          Process &amp; Blend
+        </button>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <div class="status-bar" id="statusBar">
+      <div class="spinner hidden" id="statusSpinner"></div>
+      <span id="statusText"></span>
+    </div>
+
+    <!-- Results -->
+    <div id="previewSection" class="hidden">
+
+      <div class="section-label">Preview — first 10 rows of each source</div>
+
+      <div class="preview-grid">
+        <div class="panel panel-gis">
+          <div class="panel-head">
+            <span class="panel-head-title">GIS Data</span>
+            <span class="panel-head-badge" id="gisBadge"></span>
+          </div>
+          <div class="panel-meta" id="gisMeta"></div>
+          <div class="panel-table-wrap" id="gisTable"></div>
+        </div>
+        <div class="panel panel-sheet">
+          <div class="panel-head">
+            <span class="panel-head-title">Spreadsheet</span>
+            <span class="panel-head-badge" id="spreadBadge"></span>
+          </div>
+          <div class="panel-meta" id="spreadMeta"></div>
+          <div class="panel-table-wrap" id="spreadTable"></div>
+        </div>
+      </div>
+
+      <!-- Geospatial Edit -->
+      <div class="section-label">Geospatial Edit — click a parcel to jump to its row &amp; edit inline</div>
+
+      <div class="edit-layout">
+
+        <div class="map-panel">
+          <div class="map-toolbar">
+            <span class="toolbar-label">Handing</span>
+            <div class="handing-btns">
+              <button class="handing-mode-btn active" data-handing="">Navigate</button>
+              <button class="handing-mode-btn mode-left"  data-handing="Left">◀ Left</button>
+              <button class="handing-mode-btn mode-right" data-handing="Right">Right ▶</button>
+            </div>
+            <span class="toolbar-hint">L &nbsp;·&nbsp; R &nbsp;·&nbsp; Esc</span>
+          </div>
+          <div id="map"></div>
+          <div class="map-legend">
+            <div class="legend-item"><div class="legend-swatch swatch-unassigned"></div> Unassigned</div>
+            <div class="legend-item"><div class="legend-swatch swatch-left"></div> Left</div>
+            <div class="legend-item"><div class="legend-swatch swatch-right"></div> Right</div>
+            <div class="legend-item"><div class="legend-swatch swatch-unmatched"></div> No match</div>
+          </div>
+        </div>
+
+        <div class="edit-table-panel">
+          <div class="edit-table-header">
+            <span class="edit-table-header-title">Full Blended Dataset</span>
+            <span class="edit-hint">Click a cell to edit · GIS columns are read-only</span>
+          </div>
+          <div class="edit-table-wrap" id="editTableWrap"></div>
+        </div>
+
+      </div>
+
+      <!-- Download -->
+      <div class="card">
+        <div class="download-row">
+          <div class="match-stats">
+            <div class="match-count" id="matchCount">—</div>
+            <div class="match-label" id="matchLabel">rows matched</div>
+          </div>
+          <button class="btn btn-success" id="downloadBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            Download blended_data.csv
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

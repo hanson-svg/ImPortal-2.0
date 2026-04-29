@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "ImPortal",
+  "version": "1.2",
+  "description": "Betenbough Homes — blend ArcGIS parcel data with spreadsheet data",
+  "permissions": [
+    "downloads",
+    "activeTab",
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://10ay.online.tableau.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "ImPortal",
+    "default_icon": {
+      "16":  "icon.png",
+      "48":  "icon.png",
+      "128": "icon.png"
+    }
+  },
+  "icons": {
+    "16":  "icon.png",
+    "48":  "icon.png",
+    "128": "icon.png"
+  }
+}
