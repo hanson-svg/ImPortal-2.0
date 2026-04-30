@@ -45,7 +45,7 @@ function renderPreviewTable(rows, containerId) {
   `;
 }
 
-const GIS_COLS = new Set(['Street Number', 'Street Name']);
+const GIS_COLS = new Set(['House Number', 'Street', 'Zip']);
 
 // ── Tableau connection ────────────────────────────────────────────────────────
 const TABLEAU_SERVER        = 'https://10ay.online.tableau.com';
@@ -83,7 +83,7 @@ let svgActiveGroup  = null;
 let svgMatchedKeys  = new Set();
 let svgContentGroup = null;
 let svgTransform    = { x: 0, y: 0, s: 1 };
-const LABEL_ZOOM_THRESHOLD = 2.0; // address labels appear at 2× initial zoom
+const LABEL_ZOOM_THRESHOLD = 1.5; // address labels appear at 2× initial zoom
 
 // Handing assignment state
 let handingMap        = new Map();   // key → 'Left' | 'Right' | ''
@@ -91,6 +91,7 @@ let activeHanding     = '';          // currently active paint mode
 let activeToolset     = 'handing';   // 'handing' | 'address' | 'classification'
 let classificationMap = new Map();   // key → classification string
 let currentFeatures   = [];          // stored for toolset re-render
+let addressLabelColor = localStorage.getItem('addressLabelColor') || '#dc2626';
 
 function updateZoomHint() {
   const hint = document.getElementById('zoomHint');
@@ -105,8 +106,8 @@ function applyMapTransform() {
   if (svgEl && activeToolset === 'address') {
     const show  = s >= LABEL_ZOOM_THRESHOLD;
     // Counterscale so screen size stays constant (11px / 10px) regardless of zoom level
-    const size1 = (5.5 * LABEL_ZOOM_THRESHOLD / s).toFixed(2);
-    const size2 = (5.0 * LABEL_ZOOM_THRESHOLD / s).toFixed(2);
+    const size1 = (12.0 * LABEL_ZOOM_THRESHOLD / s).toFixed(2);
+    const size2 = (8.0 * LABEL_ZOOM_THRESHOLD / s).toFixed(2);
     svgEl.querySelectorAll('text.address-label').forEach(txt => {
       txt.setAttribute('opacity', show ? '1' : '0');
       const spans = txt.querySelectorAll('tspan');
@@ -291,14 +292,14 @@ function renderSVGMap(features, blended) {
           txt.setAttribute('text-anchor', 'middle');
           txt.setAttribute('dominant-baseline', 'middle');
           txt.setAttribute('font-family', '-apple-system, BlinkMacSystemFont, sans-serif');
-          txt.setAttribute('fill', '#dc2626');
-          txt.setAttribute('stroke', 'rgba(255,255,255,0.9)');
+          txt.setAttribute('fill', addressLabelColor);
+          txt.setAttribute('stroke', addressLabelColor === '#ffffff' ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.9)');
           txt.setAttribute('stroke-width', '0.5');
           txt.setAttribute('paint-order', 'stroke');
           txt.setAttribute('pointer-events', 'none');
           txt.setAttribute('opacity', svgTransform.s >= LABEL_ZOOM_THRESHOLD ? '1' : '0');
-          const initSize1 = (5.5 * LABEL_ZOOM_THRESHOLD / svgTransform.s).toFixed(2);
-          const initSize2 = (5.0 * LABEL_ZOOM_THRESHOLD / svgTransform.s).toFixed(2);
+          const initSize1 = (12.0 * LABEL_ZOOM_THRESHOLD / svgTransform.s).toFixed(2);
+          const initSize2 = (8.0 * LABEL_ZOOM_THRESHOLD / svgTransform.s).toFixed(2);
           const span1 = document.createElementNS(NS, 'tspan');
           span1.setAttribute('x', sx); span1.setAttribute('dy', '-3'); span1.setAttribute('font-size', initSize1);
           span1.textContent = stNum;
@@ -394,6 +395,11 @@ function renderSVGMap(features, blended) {
   svg.addEventListener('mousedown', onMouseDown);
   window.addEventListener('mousemove', onMouseMove);
   window.addEventListener('mouseup', onMouseUp);
+  svg.addEventListener('click', () => {
+    // Click on map background (feature clicks stopPropagation, so this only fires for blank space)
+    if (svgActiveGroup) { styleFeatureGroup(svgActiveGroup, 'default'); svgActiveGroup = null; }
+    document.querySelectorAll('#editTableWrap tr.row-selected').forEach(r => r.classList.remove('row-selected'));
+  });
 
   // Remove window listeners when the map is replaced
   svg._cleanup = () => {
@@ -465,8 +471,8 @@ function renderEditTable(blended) {
                     ).join('')}
                   </select>
                 </td>`;
-              } else if (k === 'PlatName') {
-                return `<td class="col-platname" data-col="PlatName" title="${row[k] ?? ''}">${row[k] ?? ''}</td>`;
+              } else if (k === 'Plat Name') {
+                return `<td class="col-platname" data-col="Plat Name" title="${row[k] ?? ''}">${row[k] ?? ''}</td>`;
               } else {
                 return `<td class="col-sheet" contenteditable="true"
                             data-col="${k}"
@@ -523,6 +529,7 @@ function renderEditTable(blended) {
   wrap.querySelectorAll('tr[data-key]').forEach(tr => {
     tr.addEventListener('click', e => {
       if (e.target.classList.contains('col-sheet')) return;
+      document.querySelectorAll('#editTableWrap tr.row-selected').forEach(r => r.classList.remove('row-selected'));
       selectMapByKey(tr.dataset.key);
       tr.classList.add('row-selected');
     });
@@ -542,7 +549,7 @@ function getEditedData() {
     });
     // Premium — store as integer (empty string if blank)
     tr.querySelectorAll('input[data-col]').forEach(input => {
-      edited[input.dataset.col] = input.value === '' ? '' : parseInt(input.value, 10);
+      edited[input.dataset.col] = input.value === '' ? 0 : parseInt(input.value, 10);
     });
     // Handing — store as string
     tr.querySelectorAll('select[data-col]').forEach(sel => {
@@ -722,9 +729,20 @@ function renderToolbarContent(toolset) {
       <span class="toolbar-hint">L &nbsp;&middot;&nbsp; R &nbsp;&middot;&nbsp; Esc</span>`;
     attachHandingToolbarListeners();
   } else if (toolset === 'address') {
+    const colors = [
+      { hex: '#dc2626', title: 'Red'   },
+      { hex: '#1d4ed8', title: 'Blue'  },
+      { hex: '#ffffff', title: 'White' },
+      { hex: '#1a2725', title: 'Black' }
+    ];
     tb.innerHTML = `
       <span class="toolbar-label">Address Editor</span>
-      <span class="toolbar-hint" style="margin-left:0">Click a parcel to edit address</span>`;
+      <div class="addr-color-btns">
+        ${colors.map(c => `<button class="addr-color-btn${addressLabelColor === c.hex ? ' active' : ''}"
+          data-color="${c.hex}" style="background:${c.hex};" title="${c.title}"></button>`).join('')}
+      </div>
+      <span class="toolbar-hint" style="margin-left:6px">Click a parcel to edit address</span>`;
+    attachAddressColorListeners();
   } else {
     tb.innerHTML = `
       <span class="toolbar-label">Classification</span>
@@ -790,12 +808,12 @@ function showAddressPopover(key, e) {
   showMapPopover(`
     <div class="popover-title">Edit Address</div>
     <div class="popover-field">
-      <span class="popover-label">Street Number</span>
-      <input class="popover-input" id="popStNum" value="${String(row['Street Number'] ?? '').replace(/"/g, '&quot;')}">
+      <span class="popover-label">House Number</span>
+      <input class="popover-input" id="popStNum" value="${String(row['House Number'] ?? '').replace(/"/g, '&quot;')}">
     </div>
     <div class="popover-field">
-      <span class="popover-label">Street Name</span>
-      <input class="popover-input" id="popStName" value="${String(row['Street Name'] ?? '').replace(/"/g, '&quot;')}">
+      <span class="popover-label">Street</span>
+      <input class="popover-input" id="popStName" value="${String(row['Street'] ?? '').replace(/"/g, '&quot;')}">
     </div>
     <div class="popover-actions">
       <button class="popover-cancel" id="popCancel">Cancel</button>
@@ -806,13 +824,13 @@ function showAddressPopover(key, e) {
     const stNum  = document.getElementById('popStNum').value.trim();
     const stName = document.getElementById('popStName').value.trim();
     const idx = blendedData.findIndex(r => rowKey(r) === key);
-    if (idx !== -1) { blendedData[idx]['Street Number'] = stNum; blendedData[idx]['Street Name'] = stName; }
+    if (idx !== -1) { blendedData[idx]['House Number'] = stNum; blendedData[idx]['Street'] = stName; }
     const wrap = document.getElementById('editTableWrap');
     const tr   = wrap?.querySelector(`tr[data-key="${key}"]`);
     if (tr) {
       tr.querySelectorAll('td.col-gis[data-col]').forEach(td => {
-        if (td.dataset.col === 'Street Number') td.textContent = stNum;
-        if (td.dataset.col === 'Street Name')   td.textContent = stName;
+        if (td.dataset.col === 'House Number') td.textContent = stNum;
+        if (td.dataset.col === 'Street')       td.textContent = stName;
       });
     }
     if (svgEl) {
@@ -862,6 +880,25 @@ function showClassificationPopover(key, e) {
     hideMapPopover();
   };
   document.getElementById('popCancel').onclick = hideMapPopover;
+}
+
+function attachAddressColorListeners() {
+  document.querySelectorAll('.addr-color-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      addressLabelColor = btn.dataset.color;
+      localStorage.setItem('addressLabelColor', addressLabelColor);
+      document.querySelectorAll('.addr-color-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.color === addressLabelColor)
+      );
+      if (svgEl) {
+        const halo = addressLabelColor === '#ffffff' ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.9)';
+        svgEl.querySelectorAll('text.address-label').forEach(txt => {
+          txt.setAttribute('fill', addressLabelColor);
+          txt.setAttribute('stroke', halo);
+        });
+      }
+    });
+  });
 }
 
 function attachHandingToolbarListeners() {
@@ -984,7 +1021,7 @@ document.getElementById('processBtn').addEventListener('click', async () => {
 
     const url = 'https://services7.arcgis.com/WusDoPJONiFauKEv/arcgis/rest/services/BH_Parcels_View_(Public)/FeatureServer/1/query';
     const params = new URLSearchParams({
-      outFields:         'PhaseID,LotNum,BlockNum,ST_NUM,ST_NAME',
+      outFields:         'PhaseID,LotNum,BlockNum,ST_NUM,ST_NAME,ZIP',
       where:             `PhaseID=${phaseId}`,
       f:                 'json',
       returnGeometry:    'true',
@@ -1040,13 +1077,20 @@ document.getElementById('processBtn').addEventListener('click', async () => {
 
       if (match) {
         blended.push({
-          ...row,
-          'Street Number': match.attributes.ST_NUM ?? '',
-          'Street Name':   match.attributes.ST_NAME ?? '',
-          Premium:         '',
-          Handing:         '',
+          'House Number':            match.attributes.ST_NUM  ?? '',
+          'Street':                  match.attributes.ST_NAME ?? '',
+          'Plat Name':               document.getElementById('platNameInput')?.value ?? '',
+          'Lot #':                   row['Lot #']         ?? '',
+          'Block #':                 row['Block #']       ?? '',
+          'Zip':                     match.attributes.ZIP ?? '',
           'Homesite Classification': row['Homesite Classification'] ?? '',
-          PlatName:        document.getElementById('platNameInput')?.value ?? ''
+          'Premium':                 0,
+          'Handing':                 '',
+          'Depth':                   row['Depth']         ?? '',
+          'Width':                   row['Width']         ?? '',
+          'Total Size':              row['Total Size']    ?? '',
+          'Max Box Width':           row['Max Box Width'] ?? '',
+          'Max Box Depth':           row['Max Box Depth'] ?? ''
         });
       }
     });
@@ -1076,8 +1120,8 @@ document.getElementById('processBtn').addEventListener('click', async () => {
     const platNameInput = document.getElementById('platNameInput');
     platNameInput.oninput = () => {
       const val = platNameInput.value;
-      blendedData.forEach(r => { r.PlatName = val; });
-      document.querySelectorAll('#editTableWrap td[data-col="PlatName"]').forEach(td => {
+      blendedData.forEach(r => { r['Plat Name'] = val; });
+      document.querySelectorAll('#editTableWrap td[data-col="Plat Name"]').forEach(td => {
         td.textContent = val;
         td.title       = val;
       });
@@ -1092,11 +1136,14 @@ document.getElementById('processBtn').addEventListener('click', async () => {
 
     // 6. Download — reads live DOM so edits are captured
     document.getElementById('downloadBtn').onclick = () => {
-      const finalData = getEditedData();
-      const csv = XLSX.utils.sheet_to_csv(XLSX.utils.json_to_sheet(finalData));
+      const finalData  = getEditedData();
+      const sheetName  = `${phaseName || 'Phase' + phaseId}_ImPortal`.slice(0, 31); // Excel sheet name max 31 chars
+      const wb         = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(finalData), sheetName);
+      const xlsxBytes  = XLSX.write(wb, { bookType: 'xlsx', type: 'base64' });
       chrome.downloads.download({
-        url:      'data:text/csv;charset=utf-8,' + encodeURIComponent(csv),
-        filename: `blended_${phaseName || 'Phase' + phaseId}.csv`
+        url:      'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,' + xlsxBytes,
+        filename: `${sheetName}.xlsx`
       });
       setStatus('success', 'Download started!');
     };

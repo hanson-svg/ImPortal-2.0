@@ -192,7 +192,7 @@
     .edit-layout {
       display: grid;
       grid-template-columns: minmax(400px, 32%) 1fr;
-      gap: 16px; margin-bottom: 18px; align-items: stretch;
+      gap: 16px; margin-bottom: 18px; align-items: start;
     }
 
     .map-panel {
@@ -277,6 +277,18 @@
     .popover-actions { display: flex; gap: 7px; justify-content: flex-end; }
     .popover-save   { background: #db5d00; color: white; border: none; border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
     .popover-cancel { background: #f0f5f4; color: #375957; border: 1.5px solid #c0dae1; border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
+
+    /* ── Address label color swatches ── */
+    .addr-color-btns { display: flex; gap: 5px; align-items: center; margin-left: 8px; }
+    .addr-color-btn {
+      width: 16px; height: 16px; border-radius: 50%; border: 2px solid transparent;
+      cursor: pointer; padding: 0; flex-shrink: 0;
+      transition: border-color 0.12s, transform 0.12s;
+    }
+    .addr-color-btn:hover { transform: scale(1.2); }
+    .addr-color-btn.active { border-color: #375957; box-shadow: 0 0 0 1.5px white, 0 0 0 3px #375957; }
+    .addr-color-btn[data-color="#ffffff"] { border-color: #c0dae1; }
+    .addr-color-btn[data-color="#ffffff"].active { border-color: #375957; }
 
     /* ── Zoom hint ── */
     .zoom-hint {
@@ -582,7 +594,7 @@
               <polyline points="7 10 12 15 17 10"/>
               <line x1="12" y1="3" x2="12" y2="15"/>
             </svg>
-            Download blended_data.csv
+            Download Blended XLSX
           </button>
         </div>
       </div>
