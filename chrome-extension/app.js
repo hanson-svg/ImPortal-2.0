@@ -525,6 +525,13 @@ function renderEditTable(blended) {
     });
   });
 
+  // Apply initial handing row highlights for data loaded from spreadsheet
+  wrap.querySelectorAll('tr[data-key]').forEach(tr => {
+    const sel = tr.querySelector('select[data-col="Handing"]');
+    if (sel?.value === 'Left')  tr.classList.add('handing-left');
+    if (sel?.value === 'Right') tr.classList.add('handing-right');
+  });
+
   // Click a GIS cell / row → select on map
   wrap.querySelectorAll('tr[data-key]').forEach(tr => {
     tr.addEventListener('click', e => {
@@ -562,7 +569,11 @@ function getEditedData() {
 function initMapAndEditor(features, blended) {
   blendedData       = blended;
   currentFeatures   = features;
-  handingMap        = new Map();
+  handingMap = new Map(
+    blended
+      .filter(r => r['Handing'])
+      .map(r => [rowKey(r), r['Handing']])
+  );
   classificationMap = new Map(
     blended
       .filter(r => r['Homesite Classification'])
@@ -1079,13 +1090,13 @@ document.getElementById('processBtn').addEventListener('click', async () => {
         blended.push({
           'House Number':            match.attributes.ST_NUM  ?? '',
           'Street':                  match.attributes.ST_NAME ?? '',
-          'Plat Name':               document.getElementById('platNameInput')?.value ?? '',
+          'Plat Name':               document.getElementById('platNameInput')?.value || row['Plat Name'] || '',
           'Lot #':                   row['Lot #']         ?? '',
           'Block #':                 row['Block #']       ?? '',
           'Zip':                     match.attributes.ZIP ?? '',
           'Homesite Classification': row['Homesite Classification'] ?? '',
-          'Premium':                 0,
-          'Handing':                 '',
+          'Premium':                 row['Premium'] != null && row['Premium'] !== '' ? Number(row['Premium']) : 0,
+          'Handing':                 row['Handing'] ?? '',
           'Depth':                   row['Depth']         ?? '',
           'Width':                   row['Width']         ?? '',
           'Total Size':              row['Total Size']    ?? '',
@@ -1094,6 +1105,13 @@ document.getElementById('processBtn').addEventListener('click', async () => {
         });
       }
     });
+
+    // Seed Plat Name input from spreadsheet if the input is currently empty
+    const platInput = document.getElementById('platNameInput');
+    if (platInput && !platInput.value) {
+      const platFromSpread = blended.find(r => r['Plat Name'])?.['Plat Name'];
+      if (platFromSpread) platInput.value = platFromSpread;
+    }
 
     // 4. Preview panels
     const gisLots    = features.map(f => f.attributes.LotNum).sort((a, b) => parseInt(a) - parseInt(b));
